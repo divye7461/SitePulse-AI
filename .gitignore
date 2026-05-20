@@ -1,0 +1,33 @@
+# 📦 Dependencies (Prevents committing massive packages)
+**/node_modules/
+
+# 🔐 Environment Variables & Secrets (CRITICAL)
+**/.env
+**/.env.local
+**/.env.production
+**/.env.development
+
+# 🚀 Production Build Outputs
+**/dist/
+**/build/
+**/dist-ssr/
+**/*.local
+
+# 📋 Logs
+**/logs/
+**/*.log
+**/npm-debug.log*
+**/yarn-debug.log*
+**/yarn-error.log*
+**/pnpm-debug.log*
+
+# 🛠️ Editor Directories & OS Junk
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
