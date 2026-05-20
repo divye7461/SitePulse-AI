@@ -76,7 +76,7 @@ export default function Footer() {
         {/* Bottom bar */}
         <div className="pt-7 border-t border-white/6 flex flex-col md:flex-row items-center justify-between gap-4">
           <p className="text-xs text-muted-foreground/35 tabular-nums">
-            © {new Date().getFullYear()} RankPilot. All rights reserved.
+            © {new Date().getFullYear()} SitePulse AI. All rights reserved.
           </p>
           <div className="flex items-center gap-2">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />

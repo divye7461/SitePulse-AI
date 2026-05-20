@@ -14,6 +14,8 @@ import {
   AlertCircle,
   ExternalLink,
   Type,
+  BarChart3,
+  Layers,
   Search,
 } from "lucide-react";
 import { useApp } from "../context/AppContext";
@@ -80,13 +82,13 @@ export default function Report() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [activeTab, setActiveTab] = useState("overview");
+  const [downloading, setDownloading] = useState(false);
 
   const fetchAnalysis = async () => {
     try {
       const res = await api.get(`/api/analysis/${id}`);
       if (res.data.success) {
         if (res.data.analysis.status === "processing") {
-          // Poll for completion
           setTimeout(fetchAnalysis, 2000);
           return;
         }
@@ -98,6 +100,37 @@ export default function Report() {
       setError("Failed to load analysis");
     }
     setLoading(false);
+  };
+
+  // ASYNC DOWNLOAD FILE STREAM HANDLER (Fetches Vector PDF directly from Express backend)
+  const handleDownloadPDF = async () => {
+    if (downloading) return;
+    try {
+      setDownloading(true);
+      const response = await api.get(`/api/analysis/${id}/pdf`, {
+        responseType: "blob", // CRITICAL: Forces Axios to expect binary stream data instead of JSON
+      });
+
+      // Convert raw binary chunks into a temporary browser download window URL context
+      const blob = new Blob([response.data], { type: "application/pdf" });
+      const link = document.createElement("a");
+      link.href = window.URL.createObjectURL(blob);
+
+      const filename = `SEO_Audit_Report_${new URL(analysis?.url || "").hostname}.pdf`;
+      link.download = filename;
+
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(link.href);
+    } catch (error) {
+      console.error("Failed to compile or fetch PDF document asset:", error);
+      alert(
+        "Could not extract PDF data from server. Please verify your backend route configurations.",
+      );
+    } finally {
+      setDownloading(false);
+    }
   };
 
   const getScoreClass = (s: number) => {
@@ -120,7 +153,7 @@ export default function Report() {
   ];
 
   useEffect(() => {
-    (async () => await fetchAnalysis())();
+    fetchAnalysis();
   }, [id]);
 
   if (loading) {
@@ -188,10 +221,31 @@ export default function Report() {
   ).length;
   const infoCount = analysis.issues.filter((i) => i.severity === "info").length;
 
+  // Percentage Calculations
+  const totalLinks = analysis.links.total || 1;
+  const internalLinkPercentage = Math.round(
+    (analysis.links.internal / totalLinks) * 100,
+  );
+  const externalLinkPercentage = Math.round(
+    (analysis.links.external / totalLinks) * 100,
+  );
+
+  const totalImages = analysis.images.total || 1;
+  const imageAltPercentage = Math.round(
+    (analysis.images.withAlt / totalImages) * 100,
+  );
+  const imageMissingPercentage = Math.round(
+    (analysis.images.withoutAlt / totalImages) * 100,
+  );
+
+  const maxKeywordCount = analysis.keywords.length
+    ? Math.max(...analysis.keywords.map((k) => k.count))
+    : 1;
+
   return (
     <div className="min-h-screen pt-16 md:pt-24 bg-background">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
-        {/* Back + Header */}
+        {/* Header Block with Integrated PDF Export Action Row */}
         <div className="mb-8">
           <Link
             to="/dashboard"
@@ -200,7 +254,7 @@ export default function Report() {
             <ArrowLeft size={16} />
             Back to Dashboard
           </Link>
-          <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div className="flex-1 min-w-0">
               <h1 className="text-2xl font-medium text-foreground truncate">
                 {new URL(analysis.url).hostname}
@@ -221,16 +275,23 @@ export default function Report() {
                 </span>
               </div>
             </div>
+
+            {/* HIGH-END PREMIUM EXPORT PDF TRIGGER BUTTON */}
+            <button
+              onClick={handleDownloadPDF}
+              disabled={downloading}
+              className="bg-primary hover:opacity-90 text-primary-foreground text-xs font-semibold px-4 py-2.5 rounded-xl flex items-center gap-2 transition-all shadow-md self-start sm:self-center shrink-0 cursor-pointer disabled:opacity-50"
+              style={{ color: "var(--background)" }}
+            >
+              <FileText size={14} />
+              {downloading ? "Compiling..." : "Export PDF Report"}
+            </button>
           </div>
         </div>
 
-        {/* Score Hero */}
-        <div
-          className="bg-card border border-border rounded-2xl p-6 sm:p-8 mb-6"
-          style={{ animationDelay: "100ms" }}
-        >
-          <div className="flex flex-col md:flex-row items-center gap-8">
-            {/* Overall Score */}
+        {/* Score Gauge Widget Hero */}
+        <div className="bg-card border border-border rounded-2xl p-6 sm:p-8 mb-6">
+          <div className="flex flex-col lg:flex-row items-center gap-8">
             <ScoreGauge
               score={analysis.overallScore}
               size={160}
@@ -238,7 +299,6 @@ export default function Report() {
               label="Overall Score"
             />
 
-            {/* Category Scores */}
             <div className="flex-1 w-full">
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                 {[
@@ -280,7 +340,7 @@ export default function Report() {
                 ))}
               </div>
 
-              {/* Quick Stats */}
+              {/* Numerical Page Statistics */}
               <div className="grid grid-cols-3 gap-3 mt-4">
                 <div className="bg-muted/30 border border-border rounded-xl p-3 text-center">
                   <p className="text-lg font-bold text-primary">
@@ -305,16 +365,13 @@ export default function Report() {
           </div>
         </div>
 
-        {/* Tabs */}
-        <div
-          className="flex gap-1 mb-6 overflow-x-auto pb-1"
-          style={{ animationDelay: "200ms" }}
-        >
+        {/* Tabs Control Header */}
+        <div className="flex gap-1 mb-6 overflow-x-auto pb-1">
           {tabs.map((tab) => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`px-5 py-2.5 rounded-xl text-sm font-medium transition-all whitespace-nowrap ${activeTab === tab.id ? "bg-primary text-primary-foreground" : "bg-card border border-border text-muted-foreground hover:text-foreground hover:bg-muted/50"}`}
+              className={`px-5 py-2.5 rounded-xl text-sm font-medium transition-all ${activeTab === tab.id ? "bg-primary text-primary-foreground" : "bg-card border border-border text-muted-foreground hover:text-foreground hover:bg-muted/50"}`}
               style={activeTab === tab.id ? { color: "var(--background)" } : {}}
             >
               {tab.label}
@@ -327,200 +384,170 @@ export default function Report() {
           ))}
         </div>
 
-        {/* Tab Content */}
+        {/* Primary View Tab Switcher */}
         <div key={activeTab}>
           {activeTab === "overview" && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Issues Summary */}
-              <div className="bg-card border border-border rounded-2xl p-6">
-                <h3 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
-                  <AlertCircle size={20} className="text-danger" />
-                  Issues Summary
-                </h3>
-                <div className="grid grid-cols-3 gap-3">
-                  <div className="severity-critical rounded-xl p-4 text-center">
-                    <p className="text-2xl font-bold">{criticalCount}</p>
-                    <p className="text-xs mt-1">Critical</p>
-                  </div>
-                  <div className="severity-warning rounded-xl p-4 text-center">
-                    <p className="text-2xl font-bold">{warningCount}</p>
-                    <p className="text-xs mt-1">Warnings</p>
-                  </div>
-                  <div className="severity-info rounded-xl p-4 text-center">
-                    <p className="text-2xl font-bold">{infoCount}</p>
-                    <p className="text-xs mt-1">Info</p>
+              {/* Overview left column: Issue logs summaries */}
+              <div className="bg-card border border-border rounded-2xl p-6 flex flex-col justify-between">
+                <div>
+                  <h3 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
+                    <AlertCircle size={20} className="text-danger" />
+                    Issues Summary
+                  </h3>
+                  <div className="grid grid-cols-3 gap-3 mb-6">
+                    <div className="severity-critical rounded-xl p-4 text-center">
+                      <p className="text-2xl font-bold">{criticalCount}</p>
+                      <p className="text-xs mt-1">Critical</p>
+                    </div>
+                    <div className="severity-warning rounded-xl p-4 text-center">
+                      <p className="text-2xl font-bold">{warningCount}</p>
+                      <p className="text-xs mt-1">Warnings</p>
+                    </div>
+                    <div className="severity-info rounded-xl p-4 text-center">
+                      <p className="text-2xl font-bold">{infoCount}</p>
+                      <p className="text-xs mt-1">Info</p>
+                    </div>
                   </div>
                 </div>
 
-                {analysis.issues.length > 0 && (
-                  <div className="mt-4 space-y-2">
-                    {analysis.issues.slice(0, 3).map((issue, i) => (
+                {analysis.issues.length > 0 ? (
+                  <div className="space-y-2">
+                    {analysis.issues.slice(0, 2).map((issue, i) => (
                       <IssueCard key={i} issue={issue} />
                     ))}
-                    {analysis.issues.length > 3 && (
+                    {analysis.issues.length > 2 && (
                       <button
                         onClick={() => setActiveTab("issues")}
-                        className="w-full text-center text-sm text-primary hover:underline py-2"
+                        className="w-full text-center text-sm text-primary hover:underline py-2 mt-2 block"
                       >
                         View all {analysis.issues.length} issues →
                       </button>
                     )}
                   </div>
-                )}
-              </div>
-
-              {/* Links & Images */}
-              <div className="space-y-6">
-                <div className="bg-card border border-border rounded-2xl p-6">
-                  <h3 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
-                    <Link2 size={20} className="text-primary" />
-                    Links Analysis
-                  </h3>
-                  <div className="grid grid-cols-3 gap-3">
-                    <div className="glass rounded-xl p-4 text-center">
-                      <p className="text-2xl font-bold text-primary">
-                        {analysis.links.internal}
-                      </p>
-                      <p className="text-xs text-gray-500">Internal</p>
-                    </div>
-                    <div className="glass rounded-xl p-4 text-center">
-                      <p className="text-2xl font-bold text-secondary">
-                        {analysis.links.external}
-                      </p>
-                      <p className="text-xs text-gray-500">External</p>
-                    </div>
-                    <div className="glass rounded-xl p-4 text-center">
-                      <p className="text-2xl font-bold text-accent">
-                        {analysis.links.total}
-                      </p>
-                      <p className="text-xs text-gray-500">Total</p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="bg-card border border-border rounded-2xl p-6">
-                  <h3 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
-                    <Image size={20} className="text-accent" />
-                    Images Audit
-                  </h3>
-                  <div className="grid grid-cols-3 gap-3">
-                    <div className="glass rounded-xl p-4 text-center">
-                      <p className="text-2xl font-bold">
-                        {analysis.images.total}
-                      </p>
-                      <p className="text-xs text-gray-500">Total</p>
-                    </div>
-                    <div className="glass rounded-xl p-4 text-center">
-                      <p className="text-2xl font-bold text-success">
-                        {analysis.images.withAlt}
-                      </p>
-                      <p className="text-xs text-gray-500">With Alt</p>
-                    </div>
-                    <div className="glass rounded-xl p-4 text-center">
-                      <p
-                        className={`text-2xl font-bold ${analysis.images.withoutAlt > 0 ? "text-danger" : "text-success"}`}
-                      >
-                        {analysis.images.withoutAlt}
-                      </p>
-                      <p className="text-xs text-gray-500">Missing Alt</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Headings */}
-              <div className="bg-card border border-border rounded-2xl p-6">
-                <h3 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
-                  <Heading size={20} className="text-secondary" />
-                  Heading Structure
-                </h3>
-                <div className="space-y-2">
-                  {["h1", "h2", "h3", "h4", "h5", "h6"].map((tag) => {
-                    const count = analysis.headings[
-                      tag as keyof typeof analysis.headings
-                    ] as number;
-                    const maxBar = Math.max(
-                      analysis.headings.h1,
-                      analysis.headings.h2,
-                      analysis.headings.h3,
-                      analysis.headings.h4,
-                      analysis.headings.h5,
-                      analysis.headings.h6,
-                      1,
-                    );
-                    return (
-                      <div key={tag} className="flex items-center gap-3">
-                        <span className="text-xs font-mono text-gray-400 w-6 uppercase">
-                          {tag}
-                        </span>
-                        <div className="flex-1 h-6 rounded-lg bg-white/5 overflow-hidden">
-                          <div
-                            className="h-full rounded-lg gradient-bg transition-all"
-                            style={{
-                              width: `${(count / maxBar) * 100}%`,
-                              minWidth: count > 0 ? "20px" : "0",
-                            }}
-                          />
-                        </div>
-                        <span
-                          className={`text-sm font-bold w-6 text-right ${tag === "h1" && count !== 1 ? "text-danger" : ""}`}
-                        >
-                          {count}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-                {analysis.headings.h1Texts.length > 0 && (
-                  <div className="mt-4 p-3 rounded-xl bg-white/3 border border-white/5">
-                    <p className="text-xs text-gray-500 mb-1">H1 Text:</p>
-                    {analysis.headings.h1Texts.map((text, i) => (
-                      <p key={i} className="text-sm text-gray-300 truncate">
-                        {text}
-                      </p>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Keywords */}
-              <div className="bg-card border border-border rounded-2xl p-6">
-                <h3 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
-                  <Type size={20} className="text-warning" />
-                  Top Keywords
-                </h3>
-                {analysis.keywords.length > 0 ? (
-                  <div className="space-y-2">
-                    {analysis.keywords.map((kw, i) => (
-                      <div key={kw.word} className="flex items-center gap-3">
-                        <span className="text-xs text-gray-500 w-4">
-                          {i + 1}
-                        </span>
-                        <span className="flex-1 text-sm font-medium">
-                          {kw.word}
-                        </span>
-                        <span className="text-xs text-gray-400">
-                          {kw.count}×
-                        </span>
-                        <div className="w-16 h-1.5 rounded-full bg-white/5 overflow-hidden">
-                          <div
-                            className="h-full rounded-full bg-accent"
-                            style={{
-                              width: `${Math.min(kw.density * 10, 100)}%`,
-                            }}
-                          />
-                        </div>
-                        <span className="text-xs text-gray-500 w-12 text-right">
-                          {kw.density}%
-                        </span>
-                      </div>
-                    ))}
-                  </div>
                 ) : (
-                  <p className="text-sm text-gray-500">
-                    No keyword data available.
+                  <p className="text-sm text-muted-foreground text-center py-6">
+                    No problems found on your platform layout.
                   </p>
                 )}
+              </div>
+
+              {/* Overview right column: Structural Graph Module Panel */}
+              <div className="bg-card border border-border rounded-2xl p-6 space-y-6">
+                <h3 className="text-lg font-semibold text-foreground flex items-center gap-2">
+                  <BarChart3 size={20} className="text-primary" />
+                  Structure Analytics Graph
+                </h3>
+
+                {/* Graph Segment 1: Link Stack Counts Visibility */}
+                <div className="space-y-2">
+                  <div className="flex justify-between text-xs font-medium text-muted-foreground">
+                    <span className="flex items-center gap-1.5">
+                      <Link2 size={12} className="text-primary" /> Links Stack (
+                      {analysis.links.total} total)
+                    </span>
+                    <span>
+                      {internalLinkPercentage}% Internal /{" "}
+                      {externalLinkPercentage}% External
+                    </span>
+                  </div>
+                  <div className="w-full h-8 bg-muted/40 rounded-xl overflow-hidden flex p-1 border border-border/50">
+                    <div
+                      className="h-full rounded-lg bg-white transition-all duration-500 flex items-center justify-center text-[11px] font-bold text-slate-900 px-2"
+                      style={{
+                        width: `${internalLinkPercentage}%`,
+                        minWidth: analysis.links.internal > 0 ? "50px" : "0%",
+                      }}
+                    >
+                      {analysis.links.internal} Int
+                    </div>
+                    <div
+                      className="h-full rounded-lg bg-slate-700 transition-all duration-500 flex items-center justify-center text-[11px] font-bold text-white px-2 ml-1"
+                      style={{
+                        width: `${externalLinkPercentage}%`,
+                        minWidth: analysis.links.external > 0 ? "50px" : "0%",
+                      }}
+                    >
+                      {analysis.links.external} Ext
+                    </div>
+                  </div>
+                </div>
+
+                {/* Graph Segment 2: Image Alt Text Validation Map */}
+                <div className="space-y-2">
+                  <div className="flex justify-between text-xs font-medium text-muted-foreground">
+                    <span className="flex items-center gap-1.5">
+                      <Image size={12} className="text-accent" /> Alt
+                      Descriptions ({analysis.images.total} total)
+                    </span>
+                    <span>{imageAltPercentage}% Validated</span>
+                  </div>
+                  <div className="w-full h-8 bg-muted/40 rounded-xl overflow-hidden flex p-1 border border-border/50">
+                    <div
+                      className="h-full rounded-lg bg-emerald-500 transition-all duration-500 flex items-center justify-center text-[11px] font-bold text-white px-2"
+                      style={{
+                        width: `${imageAltPercentage}%`,
+                        minWidth: analysis.images.withAlt > 0 ? "50px" : "0%",
+                      }}
+                    >
+                      {analysis.images.withAlt} Valid
+                    </div>
+                    <div
+                      className="h-full rounded-lg bg-rose-500 transition-all duration-500 flex items-center justify-center text-[11px] font-bold text-white px-3 ml-1 min-w-[fit-content] whitespace-nowrap"
+                      style={{ width: `${imageMissingPercentage}%` }}
+                    >
+                      {analysis.images.withoutAlt} Alert
+                    </div>
+                  </div>
+                </div>
+
+                {/* Graph Segment 3: Weight Distribution Balance Dashboard Panel */}
+                <div className="space-y-2 pt-4 border-t border-border/50">
+                  <p className="text-xs font-medium text-muted-foreground mb-4 flex items-center gap-1.5">
+                    <Layers size={12} className="text-secondary" /> Weight
+                    Distribution Balance
+                  </p>
+                  <div className="grid grid-cols-4 gap-4 h-32 items-end pt-4 pb-1 px-2 bg-muted/10 rounded-xl border border-border/30">
+                    {[
+                      {
+                        name: "SEO",
+                        val: analysis.categories.seo,
+                        color: "bg-indigo-500",
+                      },
+                      {
+                        name: "Perf",
+                        val: analysis.categories.performance,
+                        color: "bg-amber-500",
+                      },
+                      {
+                        name: "Access",
+                        val: analysis.categories.accessibility,
+                        color: "bg-emerald-500",
+                      },
+                      {
+                        name: "Rules",
+                        val: analysis.categories.bestPractices,
+                        color: "bg-cyan-500",
+                      },
+                    ].map((bar) => (
+                      <div
+                        key={bar.name}
+                        className="flex flex-col items-center justify-end h-full group"
+                      >
+                        <span className="text-[11px] font-bold text-foreground mb-1">
+                          {bar.val}
+                        </span>
+                        <div
+                          className={`w-full ${bar.color} rounded-t-xl rounded-b-md transition-all duration-500 group-hover:brightness-115`}
+                          style={{ height: `${bar.val}%` }}
+                        />
+                        <span className="text-[10px] text-muted-foreground font-medium mt-1.5 truncate max-w-full">
+                          {bar.name}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
             </div>
           )}
@@ -537,13 +564,13 @@ export default function Report() {
                     label: "Title",
                     value: analysis.metaData.title,
                     ideal: "50-60 characters",
-                    len: analysis.metaData.title.length,
+                    len: analysis.metaData.title?.length,
                   },
                   {
                     label: "Description",
                     value: analysis.metaData.description,
                     ideal: "150-160 characters",
-                    len: analysis.metaData.description.length,
+                    len: analysis.metaData.description?.length,
                   },
                   {
                     label: "Canonical URL",
@@ -577,11 +604,9 @@ export default function Report() {
                             {meta.len} chars
                           </span>
                         )}
-                        {meta.value ? (
-                          <span className="w-2 h-2 rounded-full bg-success" />
-                        ) : (
-                          <span className="w-2 h-2 rounded-full bg-danger" />
-                        )}
+                        <span
+                          className={`w-2 h-2 rounded-full ${meta.value ? "bg-success" : "bg-danger"}`}
+                        />
                       </div>
                     </div>
                     {meta.value ? (
@@ -604,105 +629,107 @@ export default function Report() {
 
           {activeTab === "content" && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Content left column: Header Layout Bars */}
               <div className="bg-card border border-border rounded-2xl p-6">
-                <h3 className="text-lg font-semibold text-foreground mb-4">
-                  Content Stats
+                <h3 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
+                  <Heading size={20} className="text-secondary" />
+                  Heading Layout Distribution
                 </h3>
-                <div className="space-y-4">
-                  <div className="flex justify-between items-center p-3 bg-muted/50 border border-border rounded-xl">
-                    <span className="text-sm text-muted-foreground">
-                      Word Count
-                    </span>
-                    <span className="font-bold text-foreground">
-                      {analysis.wordCount.toLocaleString()}
-                    </span>
-                  </div>
-                  <div className="flex justify-between items-center p-3 bg-muted/50 border border-border rounded-xl">
-                    <span className="text-sm text-muted-foreground">
-                      Page Size
-                    </span>
-                    <span className="font-bold text-foreground">
-                      {Math.round(analysis.pageSize / 1024)} KB
-                    </span>
-                  </div>
-                  <div className="flex justify-between items-center p-3 bg-muted/50 border border-border rounded-xl">
-                    <span className="text-sm text-muted-foreground">
-                      Load Time
-                    </span>
-                    <span
-                      className={`font-bold ${analysis.loadTime < 3000 ? "score-good" : analysis.loadTime < 5000 ? "score-medium" : "score-poor"}`}
-                    >
-                      {(analysis.loadTime / 1000).toFixed(2)}s
-                    </span>
-                  </div>
-                  <div className="flex justify-between items-center p-3 bg-muted/50 border border-border rounded-xl">
-                    <span className="text-sm text-muted-foreground">
-                      Total Links
-                    </span>
-                    <span className="font-bold text-foreground">
-                      {analysis.links.total}
-                    </span>
-                  </div>
-                  <div className="flex justify-between items-center p-3 bg-muted/50 border border-border rounded-xl">
-                    <span className="text-sm text-muted-foreground">
-                      Total Images
-                    </span>
-                    <span className="font-bold text-foreground">
-                      {analysis.images.total}
-                    </span>
-                  </div>
-                  <div className="flex justify-between items-center p-3 bg-muted/50 border border-border rounded-xl">
-                    <span className="text-sm text-muted-foreground">
-                      Total Headings
-                    </span>
-                    <span className="font-bold text-foreground">
-                      {analysis.headings.h1 +
-                        analysis.headings.h2 +
-                        analysis.headings.h3 +
-                        analysis.headings.h4 +
-                        analysis.headings.h5 +
-                        analysis.headings.h6}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-card border border-border rounded-2xl p-6">
-                <h3 className="text-lg font-semibold text-foreground mb-4">
-                  Heading Hierarchy
-                </h3>
-                <div className="space-y-2">
-                  {["h1", "h2", "h3", "h4", "h5", "h6"].map((tag, i) => {
+                <div className="space-y-3">
+                  {["h1", "h2", "h3", "h4", "h5", "h6"].map((tag) => {
                     const count = analysis.headings[
                       tag as keyof typeof analysis.headings
                     ] as number;
+                    const maxBar = Math.max(
+                      analysis.headings.h1,
+                      analysis.headings.h2,
+                      analysis.headings.h3,
+                      analysis.headings.h4,
+                      analysis.headings.h5,
+                      analysis.headings.h6,
+                      1,
+                    );
+                    const widthPercent = (count / maxBar) * 100;
+
                     return (
-                      <div
-                        key={tag}
-                        className="flex items-center gap-3 p-2.5 bg-muted/30 border border-border rounded-lg"
-                        style={{ paddingLeft: `${i * 12 + 12}px` }}
-                      >
-                        <span className="text-xs font-mono font-bold text-primary uppercase">
-                          &lt;{tag}&gt;
+                      <div key={tag} className="flex items-center gap-3">
+                        <span className="text-xs font-mono font-bold text-muted-foreground w-6 uppercase">
+                          {tag}
                         </span>
-                        <span className="text-sm text-muted-foreground flex-1">
-                          {count} {count === 1 ? "tag" : "tags"}
+                        <div className="flex-1 h-7 rounded-xl bg-muted/40 overflow-hidden p-1 border border-border/30 flex items-center">
+                          <div
+                            className="h-full rounded-lg bg-gradient-to-r from-primary to-secondary transition-all duration-500"
+                            style={{
+                              width: `${widthPercent}%`,
+                              minWidth: count > 0 ? "8px" : "0px",
+                            }}
+                          />
+                        </div>
+                        <span
+                          className={`text-xs font-mono font-bold w-8 text-right ${tag === "h1" && count !== 1 ? "text-danger" : "text-muted-foreground"}`}
+                        >
+                          {count}
                         </span>
-                        {tag === "h1" && (
-                          <span
-                            className={`text-xs px-2 py-0.5 rounded-full ${count === 1 ? "score-bg-good text-success" : "score-bg-poor text-danger"}`}
-                          >
-                            {count === 1
-                              ? "✓ Good"
-                              : count === 0
-                                ? "✗ Missing"
-                                : "✗ Multiple"}
-                          </span>
-                        )}
                       </div>
                     );
                   })}
                 </div>
+
+                {analysis.headings.h1Texts.length > 0 && (
+                  <div className="mt-5 p-4 rounded-xl bg-muted/30 border border-border/50">
+                    <p className="text-xs font-medium text-muted-foreground mb-1.5">
+                      Detected Main H1 Headers:
+                    </p>
+                    {analysis.headings.h1Texts.map((text, i) => (
+                      <p
+                        key={i}
+                        className="text-sm text-foreground truncate font-medium"
+                      >
+                        “{text}”
+                      </p>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Content right column: Keyword Metrics Profile */}
+              <div className="bg-card border border-border rounded-2xl p-6">
+                <h3 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
+                  <Type size={20} className="text-warning" />
+                  Top Keyword Density Metrics
+                </h3>
+                {analysis.keywords.length > 0 ? (
+                  <div className="space-y-3">
+                    {analysis.keywords.slice(0, 6).map((kw, i) => {
+                      const frequencyRatio = (kw.count / maxKeywordCount) * 100;
+                      return (
+                        <div key={kw.word} className="space-y-1">
+                          <div className="flex justify-between text-xs font-medium">
+                            <span className="text-foreground">
+                              <span className="text-muted-foreground font-mono mr-1">
+                                #{i + 1}
+                              </span>{" "}
+                              {kw.word}
+                            </span>
+                            <span className="text-muted-foreground">
+                              {kw.count} occurrences ({kw.density}%)
+                            </span>
+                          </div>
+                          <div className="w-full h-5 bg-muted/40 rounded-lg overflow-hidden p-0.5 border border-border/30 flex items-center">
+                            <div
+                              className="h-full rounded-md bg-warning/80 transition-all duration-500"
+                              style={{ width: `${frequencyRatio}%` }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    No keyword data collected from this route.
+                  </p>
+                )}
               </div>
             </div>
           )}
@@ -711,10 +738,9 @@ export default function Report() {
             <div>
               {analysis.issues.length > 0 ? (
                 <>
-                  {/* Issue filters */}
                   <div className="flex items-center gap-3 mb-4 flex-wrap">
                     <span className="text-sm text-muted-foreground">
-                      Filter:
+                      Filter Elements:
                     </span>
                     <span className="severity-critical px-2.5 py-1 rounded-full text-xs font-semibold">
                       {criticalCount} Critical
@@ -741,7 +767,7 @@ export default function Report() {
                     No Issues Found!
                   </h3>
                   <p className="text-sm text-muted-foreground">
-                    Your website is following SEO best practices.
+                    Your website follows standard SEO configurations smoothly.
                   </p>
                 </div>
               )}

@@ -19,9 +19,11 @@
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
+    "html-pdf-node": "^1.0.8",
     "jsonwebtoken": "^9.0.3",
     "mongoose": "^9.6.2",
     "node-cron": "^4.2.1",
+    "pdfkit": "^0.18.0",
     "playwright-core": "^1.60.0"
   },
   "devDependencies": {
